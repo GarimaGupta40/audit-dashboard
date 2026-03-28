@@ -2,14 +2,13 @@ import { useState, useEffect, useRef } from "react";
 
 type Screen = "landing" | "loading" | "success";
 
-const WEBHOOK_URL = "https://hook.eu1.make.com/zseyn2kvo4vd9b9t0ve1by6tc2m0mjyf";
+const WEBHOOK_URL = "https://hook.eu1.make.com/0bd9k3i3gbpfksur04wls662bf5rovxb";
 
 const STEPS = [
-  "Researching digital presence...",
-  "Analyzing platform metrics...",
-  "Building strategic insights...",
-  "Designing premium PDF report...",
-  "Sending to your inbox...",
+  "Collecting Social Media Data",
+  "Analyzing Website Performance",
+  "Running SEO Audit",
+  "Generating Final Reports",
 ];
 
 const sampleBrands = [
@@ -103,8 +102,11 @@ export default function AuditDashboard() {
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+  
   const [isSending, setIsSending] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [webhookError, setWebhookError] = useState("");
+  const [reportLinks, setReportLinks] = useState({ full: "", seo: "" });
+
   const formRef = useRef<HTMLFormElement>(null);
 
   function validate(): boolean {
@@ -136,12 +138,10 @@ export default function AuditDashboard() {
       industry: undefined,
     }));
 
-    // Highlight the filled fields briefly
     const fields = new Set(["brandName", "website", "industry"]);
     setHighlightedFields(fields);
     setTimeout(() => setHighlightedFields(new Set()), 1200);
 
-    // Scroll to form
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
@@ -150,8 +150,9 @@ export default function AuditDashboard() {
   async function handleSubmit() {
     if (!validate()) return;
 
-    // Transition to loading screen immediately
     setScreen("loading");
+    setWebhookError("");
+    setIsSending(true);
     setActiveStep(0);
     setCompletedSteps([]);
 
@@ -160,52 +161,68 @@ export default function AuditDashboard() {
     const industry = formData.industry.trim();
     const email = formData.email.trim();
 
-    console.log({ brandName, websiteURL, industry, email });
+    let currentStep = 0;
+    const maxLoadingSteps = STEPS.length - 1;
 
-    // Bypassing CORS Preflight by not using application/json
-    const fetchPromise = fetch(WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        company_name: brandName,
-        company_url: websiteURL,
-        industry: industry,
-        recipient_email: email
-      }).toString()
-    })
-      .then(async (res) => {
-        const text = await res.text();
-        console.log("Webhook response:", text);
-      })
-      .catch((error) => {
-        // Since we are awaiting it and Make might not return CORS headers 
-        // on the response, it will likely throw a CORS read error.
-        // But the data HAS been sent already.
-        console.error("Webhook read error (expected if no CORS response headers):", error);
+    // Start advancing steps while waiting for webhook
+    const progressInterval = setInterval(() => {
+      if (currentStep < maxLoadingSteps) {
+        setCompletedSteps((prev) => [...prev, currentStep]);
+        currentStep++;
+        setActiveStep(currentStep);
+      }
+    }, 2500);
+
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          company_name: brandName,
+          company_url: websiteURL,
+          industry: industry,
+          recipient_email: email
+        }).toString()
       });
 
-    // Animate steps concurrently
-    for (let i = 0; i < STEPS.length; i++) {
-      await delay(i === 0 ? 800 : 1800);
-      setActiveStep(i);
-      if (i > 0) {
-        setCompletedSteps((prev) => [...prev, i - 1]);
+      if (!res.ok) throw new Error("Network response was not ok");
+      
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        // Attempt to parse JSON if the webhook is configured to return it
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.warn("Webhook returned non-JSON response:", responseText);
       }
+      
+      setReportLinks({
+        full: data?.full_report_url || "https://example.com/Make-Webhook-Did-Not-Return-URL",
+        seo: data?.seo_report_url || "https://example.com/Make-Webhook-Did-Not-Return-URL"
+      });
+
+      clearInterval(progressInterval);
+
+      // Fast-forward any remaining steps sequentially
+      for (let i = currentStep; i < STEPS.length; i++) {
+        setActiveStep(i);
+        await new Promise(r => setTimeout(r, 600)); 
+        setCompletedSteps(prev => [...prev, i]);
+      }
+      
+      await new Promise(r => setTimeout(r, 600));
+      
+      setScreen("success");
+    } catch (error) {
+      console.error("Webhook error:", error);
+      clearInterval(progressInterval);
+      setWebhookError("Something went wrong. Please try again.");
+      setScreen("landing");
+    } finally {
+      setIsSending(false);
     }
-
-    // Wait a moment on the final step ("Sending to your inbox...")
-    await delay(1800);
-    
-    // Ensure the webhook fetch completes before showing success
-    await fetchPromise;
-
-    setCompletedSteps((prev) => [...prev, STEPS.length - 1]);
-    await delay(1200);
-
-    // Show success Screen
-    setScreen("success");
   }
 
   function handleReset() {
@@ -216,6 +233,8 @@ export default function AuditDashboard() {
     setCompletedSteps([]);
     setSelectedBrand(null);
     setHighlightedFields(new Set());
+    setWebhookError("");
+    setReportLinks({ full: "", seo: "" });
   }
 
   function updateField(field: keyof FormData, value: string) {
@@ -226,215 +245,276 @@ export default function AuditDashboard() {
     if (field !== "email") setSelectedBrand(null);
   }
 
-  const isLoading = screen === "loading";
-  const isSuccess = screen === "success";
-
   return (
     <>
       <Navbar />
 
       {/* Screen 1: Landing */}
-      <div
-        className="landing-screen screen"
-        style={{
-          display: screen === "landing" ? "flex" : "none",
-          opacity: screen === "landing" ? 1 : 0,
-        }}
-      >
-        <div className="hero">
-          <p className="hero-eyebrow">DIGITAL INTELLIGENCE PLATFORM</p>
-          <h1 className="hero-heading">
-            Instant Digital
-            <span className="hero-heading-gold">Marketing Audit</span>
-          </h1>
-          <p className="hero-subtext">
-            Enter any brand. Get a complete 2-page premium audit report delivered to your inbox in under 60 seconds.
-          </p>
+      {screen === "landing" && (
+        <div className="landing-screen screen" style={{ display: "flex", opacity: 1 }}>
+          <div className="hero">
+            <p className="hero-eyebrow">DIGITAL INTELLIGENCE PLATFORM</p>
+            <h1 className="hero-heading">
+              Instant Digital
+              <span className="hero-heading-gold"> Marketing Audit</span>
+            </h1>
+            <p className="hero-subtext">
+              Enter any brand. Get a complete 2-page premium audit report delivered to your inbox in under 60 seconds.
+            </p>
+          </div>
+
+          <div className="sample-brands-section">
+            <p className="sample-brands-title">Try Sample Brands</p>
+            <div className="sample-brands-grid">
+              {sampleBrands.map((brand) => (
+                <button
+                  key={brand.name}
+                  type="button"
+                  className={`brand-card${selectedBrand === brand.name ? " selected" : ""}`}
+                  onClick={() => handleSelectBrand(brand)}
+                  disabled={isSending}
+                >
+                  <span className="brand-card-name">{brand.name}</span>
+                  <span className="brand-card-industry">{brand.industry}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form ref={formRef} className="form-card" onSubmit={(e) => e.preventDefault()} noValidate>
+            {webhookError && (
+              <div className="mb-6 p-4 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-center text-sm font-medium">
+                {webhookError}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="brandName">BRAND NAME</label>
+              <input
+                id="brandName"
+                type="text"
+                className={`form-input${errors.brandName ? " error" : ""}${highlightedFields.has("brandName") ? " filled-highlight" : ""}`}
+                placeholder="e.g. DKRaj Jewels"
+                value={formData.brandName}
+                onChange={(e) => updateField("brandName", e.target.value)}
+                disabled={isSending}
+              />
+              {errors.brandName && <p className="form-error-text visible">{errors.brandName}</p>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="website">WEBSITE URL</label>
+              <input
+                id="website"
+                type="text"
+                className={`form-input${errors.website ? " error" : ""}${highlightedFields.has("website") ? " filled-highlight" : ""}`}
+                placeholder="e.g. dkrajjewels.com"
+                value={formData.website}
+                onChange={(e) => updateField("website", e.target.value)}
+                disabled={isSending}
+              />
+              {errors.website && <p className="form-error-text visible">{errors.website}</p>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="industry">INDUSTRY</label>
+              <input
+                id="industry"
+                type="text"
+                className={`form-input${errors.industry ? " error" : ""}${highlightedFields.has("industry") ? " filled-highlight" : ""}`}
+                placeholder="e.g. Luxury Silver Jewellery"
+                value={formData.industry}
+                onChange={(e) => updateField("industry", e.target.value)}
+                disabled={isSending}
+              />
+              {errors.industry && <p className="form-error-text visible">{errors.industry}</p>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="email">RECIPIENT EMAIL</label>
+              <input
+                id="email"
+                type="email"
+                className={`form-input${errors.email ? " error" : ""}`}
+                placeholder="Report will be sent here"
+                value={formData.email}
+                onChange={(e) => updateField("email", e.target.value)}
+                disabled={isSending}
+              />
+              {errors.email && <p className="form-error-text visible">{errors.email}</p>}
+            </div>
+
+            <button 
+              type="button" 
+              className={`btn-generate transition-opacity duration-300 ${isSending ? "opacity-70 cursor-not-allowed" : ""}`} 
+              onClick={handleSubmit} 
+              disabled={isSending}
+            >
+              {isSending ? "PROCESSING..." : "GENERATE AUDIT REPORT →"}
+            </button>
+
+            <p className="powered-text">
+              Powered by Gemini + Claude AI • Delivered via email in ~60 seconds
+            </p>
+          </form>
+
+          <div className="badges-row">
+            <div className="feature-badge">
+              <span className="feature-badge-icon">◆</span>
+              <span className="feature-badge-text">2-Page PDF Report</span>
+            </div>
+            <div className="feature-badge">
+              <span className="feature-badge-icon">◆</span>
+              <span className="feature-badge-text">Real-Time Data</span>
+            </div>
+            <div className="feature-badge">
+              <span className="feature-badge-icon">◆</span>
+              <span className="feature-badge-text">AI-Powered Analysis</span>
+            </div>
+          </div>
+
+          <div className="stats-row">
+            <div className="stat-item">
+              <div className="stat-number">500+</div>
+              <div className="stat-label">Reports Generated</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-number">60sec</div>
+              <div className="stat-label">Average Delivery</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-number">98%</div>
+              <div className="stat-label">Data Accuracy</div>
+            </div>
+          </div>
         </div>
-
-        {/* Try Sample Brands */}
-        <div className="sample-brands-section">
-          <p className="sample-brands-title">Try Sample Brands</p>
-          <div className="sample-brands-grid">
-            {sampleBrands.map((brand) => (
-              <button
-                key={brand.name}
-                type="button"
-                className={`brand-card${selectedBrand === brand.name ? " selected" : ""}`}
-                onClick={() => handleSelectBrand(brand)}
-              >
-                <span className="brand-card-name">{brand.name}</span>
-                <span className="brand-card-industry">{brand.industry}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <form ref={formRef} className="form-card" onSubmit={(e) => e.preventDefault()} noValidate>
-          <div className="form-group">
-            <label className="form-label" htmlFor="brandName">BRAND NAME</label>
-            <input
-              id="brandName"
-              type="text"
-              className={`form-input${errors.brandName ? " error" : ""}${highlightedFields.has("brandName") ? " filled-highlight" : ""}`}
-              placeholder="e.g. DKRaj Jewels"
-              value={formData.brandName}
-              onChange={(e) => updateField("brandName", e.target.value)}
-            />
-            {errors.brandName && <p className="form-error-text visible">{errors.brandName}</p>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="website">WEBSITE URL</label>
-            <input
-              id="website"
-              type="text"
-              className={`form-input${errors.website ? " error" : ""}${highlightedFields.has("website") ? " filled-highlight" : ""}`}
-              placeholder="e.g. dkrajjewels.com"
-              value={formData.website}
-              onChange={(e) => updateField("website", e.target.value)}
-            />
-            {errors.website && <p className="form-error-text visible">{errors.website}</p>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="industry">INDUSTRY</label>
-            <input
-              id="industry"
-              type="text"
-              className={`form-input${errors.industry ? " error" : ""}${highlightedFields.has("industry") ? " filled-highlight" : ""}`}
-              placeholder="e.g. Luxury Silver Jewellery"
-              value={formData.industry}
-              onChange={(e) => updateField("industry", e.target.value)}
-            />
-            {errors.industry && <p className="form-error-text visible">{errors.industry}</p>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="email">RECIPIENT EMAIL</label>
-            <input
-              id="email"
-              type="email"
-              className={`form-input${errors.email ? " error" : ""}`}
-              placeholder="Report will be sent here"
-              value={formData.email}
-              onChange={(e) => updateField("email", e.target.value)}
-            />
-            {errors.email && <p className="form-error-text visible">{errors.email}</p>}
-          </div>
-
-          <button 
-            type="button" 
-            className="btn-generate" 
-            onClick={handleSubmit} 
-          >
-            GENERATE AUDIT REPORT →
-          </button>
-
-          <p className="powered-text">
-            Powered by Gemini + Claude AI • Delivered via email in ~60 seconds
-          </p>
-        </form>
-
-        <div className="badges-row">
-          <div className="feature-badge">
-            <span className="feature-badge-icon">◆</span>
-            <span className="feature-badge-text">2-Page PDF Report</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-badge-icon">◆</span>
-            <span className="feature-badge-text">Real-Time Data</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-badge-icon">◆</span>
-            <span className="feature-badge-text">AI-Powered Analysis</span>
-          </div>
-        </div>
-
-        <div className="stats-row">
-          <div className="stat-item">
-            <div className="stat-number">500+</div>
-            <div className="stat-label">Reports Generated</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">60sec</div>
-            <div className="stat-label">Average Delivery</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">98%</div>
-            <div className="stat-label">Data Accuracy</div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Screen 2: Loading */}
-      <div
-        className="loading-screen"
-        style={{
-          display: isLoading ? "flex" : "none",
-          opacity: isLoading ? 1 : 0,
-        }}
-      >
-        <div className="spinner-container">
-          <div className="spinner-ring" />
-          <div className="spinner-ring-inner" />
-          <div className="spinner-label">AI</div>
+      {screen === "loading" && (
+        <div className="loading-screen" style={{ display: "flex", opacity: 1 }}>
+          <div className="spinner-container">
+            <div className="spinner-ring" />
+            <div className="spinner-ring-inner" />
+            <div className="spinner-label">AI</div>
+          </div>
+
+          <h2 className="loading-heading">Generating Your Audit Report...</h2>
+          
+          <p className="mt-2 text-[#a1a1aa] text-center text-sm md:text-base max-w-md mx-auto mb-8 px-4 leading-relaxed">
+            Analyzing website, social media & SEO data. This may take 60–120 seconds.
+          </p>
+
+          <div className="steps-list">
+            {STEPS.map((step, i) => {
+              const isDone = completedSteps.includes(i);
+              const isActive = activeStep === i && !isDone;
+              
+              let icon = "";
+              if (isDone) icon = "✓";
+              else if (isActive && i === STEPS.length - 1) icon = "⏳";
+              else if (isActive || isDone) icon = "✓";
+
+              return (
+                <div
+                  key={i}
+                  className={`step-item${isDone ? " done" : isActive ? " active" : ""}`}
+                >
+                  <div className="step-check">{icon}</div>
+                  <span>{step}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {formData.brandName && (
+            <p className="auditing-label mt-8 text-[#C9A84C]">Auditing: {formData.brandName}</p>
+          )}
         </div>
-
-        <h2 className="loading-heading">Generating Your Audit Report</h2>
-
-        <div className="steps-list">
-          {STEPS.map((step, i) => {
-            const isDone = completedSteps.includes(i);
-            const isActive = activeStep === i && !isDone;
-            return (
-              <div
-                key={i}
-                className={`step-item${isDone ? " done" : isActive ? " active" : ""}`}
-              >
-                <div className="step-check">{isDone || isActive ? "✓" : ""}</div>
-                <span>{step}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {formData.brandName && (
-          <p className="auditing-label">Auditing: {formData.brandName}</p>
-        )}
-      </div>
+      )}
 
       {/* Screen 3: Success */}
-      <div
-        className="success-screen"
-        style={{
-          display: isSuccess ? "flex" : "none",
-          opacity: isSuccess ? 1 : 0,
-        }}
-      >
-        <ConfettiCanvas active={isSuccess} />
+      {screen === "success" && (
+        <div className="success-screen" style={{ display: "flex", opacity: 1 }}>
+          <ConfettiCanvas active={screen === "success"} />
 
-        <div className="checkmark-wrapper">
-          {isSuccess && <CheckmarkSVG />}
+          <div className="checkmark-wrapper">
+            <CheckmarkSVG />
+          </div>
+
+          <h2 className="success-heading">Report Delivered!</h2>
+
+          <p className="success-subtext">
+            Your audit report for <strong style={{ color: "var(--gold)" }}>{formData.brandName}</strong> has been sent to{" "}
+            <strong style={{ color: "var(--silver-light)" }}>{formData.email}</strong>. Please check your inbox.
+          </p>
+
+          <p className="mt-6 text-[#a1a1aa] text-center text-sm md:text-base max-w-lg mx-auto">
+            You will receive both reports in your inbox shortly.
+          </p>
+
+          <style>{`
+            .report-buttons-container {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 20px;
+              margin-top: 32px;
+              margin-bottom: 12px;
+              justify-content: center;
+              width: 100%;
+            }
+            .report-link-btn {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 14px 28px;
+              border: 1px solid var(--gold, #C9A84C);
+              color: var(--gold, #C9A84C);
+              background: transparent;
+              border-radius: 6px;
+              font-family: inherit;
+              font-size: 14px;
+              font-weight: 600;
+              letter-spacing: 0.5px;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              white-space: nowrap;
+            }
+            .report-link-btn:hover {
+              background: var(--gold, #C9A84C);
+              color: #0c1220;
+              box-shadow: 0 4px 12px rgba(201, 168, 76, 0.2);
+              transform: translateY(-1px);
+            }
+          `}</style>
+
+          <div className="report-buttons-container">
+            {reportLinks.full && (
+              <button 
+                className="report-link-btn"
+                onClick={() => window.open(reportLinks.full, "_blank")}
+              >
+                View Full Audit (PDF)
+              </button>
+            )}
+            
+            {reportLinks.seo && (
+              <button 
+                className="report-link-btn"
+                onClick={() => window.open(reportLinks.seo, "_blank")}
+              >
+                View SEO Report (PDF)
+              </button>
+            )}
+          </div>
+
+          <div className="success-buttons mt-10">
+            <button className="btn-another" onClick={handleReset}>
+              GENERATE ANOTHER REPORT
+            </button>
+          </div>
         </div>
-
-        <h2 className="success-heading">Report Delivered!</h2>
-
-        <p className="success-subtext">
-          Your audit report for <strong style={{ color: "var(--gold)" }}>{formData.brandName}</strong> has been sent to{" "}
-          <strong style={{ color: "var(--silver-light)" }}>{formData.email}</strong>. Please check your inbox.
-        </p>
-
-        <div className="success-buttons">
-          <button className="btn-another" onClick={handleReset}>
-            GENERATE ANOTHER REPORT
-          </button>
-        </div>
-      </div>
+      )}
     </>
   );
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
