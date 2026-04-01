@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 type Screen = "landing" | "loading" | "success";
 
-const WEBHOOK_URL = "https://hook.eu1.make.com/0bd9k3i3gbpfksur04wls662bf5rovxb";
+const WEBHOOK_URL = "https://hook.eu1.make.com/z48f3w10y5ckpudg9r8abfj4yhifgyk5";
 
 const STEPS = [
   "Collecting Social Media Data",
@@ -102,17 +102,26 @@ export default function AuditDashboard() {
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
-  
+
   const [isSending, setIsSending] = useState(false);
   const [webhookError, setWebhookError] = useState("");
-  const [reportLinks, setReportLinks] = useState({ full: "", seo: "" });
+  const [reportLinks, setReportLinks] = useState({ report1: "", report2: "" });
+
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showDropdown, setShowDropdown] = useState<boolean>(false);
+  const [selectedUrl, setSelectedUrl] = useState<string>("");
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState<boolean>(false);
+  const [searchError, setSearchError] = useState<string>("");
+
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const formRef = useRef<HTMLFormElement>(null);
 
   function validate(): boolean {
     const newErrors: FormErrors = {};
     if (!formData.brandName.trim()) newErrors.brandName = "Brand name is required";
-    if (!formData.website.trim()) newErrors.website = "Website URL is required";
+    if (!selectedUrl) newErrors.website = "Please select a website from suggestions";
     if (!formData.industry.trim()) newErrors.industry = "Industry is required";
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
@@ -125,6 +134,9 @@ export default function AuditDashboard() {
 
   function handleSelectBrand(brand: { name: string; url: string; industry: string }) {
     setSelectedBrand(brand.name);
+    setSuggestions([]);
+    setShowDropdown(false);
+    setSelectedUrl(brand.url);
     setFormData((prev) => ({
       ...prev,
       brandName: brand.name,
@@ -147,6 +159,43 @@ export default function AuditDashboard() {
     }, 80);
   }
 
+  function normalizeUrl(url: string): string {
+    const trimmed = url.trim();
+    if (!trimmed) return trimmed;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  }
+
+  function cleanUrl(url: string): string {
+    if (!url) return url;
+    return url.replace(/\/view$/, "/preview");
+  }
+
+  function openReport(url: string) {
+    if (!url) return;
+    window.open(url, "_blank");
+  }
+
+  async function performRequest() {
+    const companyName = formData.brandName.trim();
+    const url = normalizeUrl(selectedUrl);
+    const industry = formData.industry.trim();
+    const email = formData.email.trim();
+
+    return fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        company_name: companyName,
+        selected_url: url,
+        industry: industry,
+        recipient_email: email
+      }).toString()
+    });
+  }
+
   async function handleSubmit() {
     if (!validate()) return;
 
@@ -156,65 +205,63 @@ export default function AuditDashboard() {
     setActiveStep(0);
     setCompletedSteps([]);
 
-    const brandName = formData.brandName.trim();
-    const websiteURL = formData.website.trim();
-    const industry = formData.industry.trim();
-    const email = formData.email.trim();
-
     let currentStep = 0;
-    const maxLoadingSteps = STEPS.length - 1;
 
-    // Start advancing steps while waiting for webhook
+    // Continuously loop through steps while waiting for webhook
     const progressInterval = setInterval(() => {
-      if (currentStep < maxLoadingSteps) {
-        setCompletedSteps((prev) => [...prev, currentStep]);
-        currentStep++;
-        setActiveStep(currentStep);
+      setCompletedSteps((prev) => [...prev, currentStep]);
+      currentStep++;
+
+      if (currentStep >= STEPS.length) {
+        currentStep = 0;
+        setCompletedSteps([]);
       }
-    }, 2500);
+
+      setActiveStep(currentStep);
+    }, 3000);
 
     try {
-      const res = await fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          company_name: brandName,
-          company_url: websiteURL,
-          industry: industry,
-          recipient_email: email
-        }).toString()
-      });
+      const res = await performRequest();
+
+      console.log("=== WEBHOOK RESPONSE ===");
+      console.log("HTTP Status:", res.status, res.statusText);
 
       if (!res.ok) throw new Error("Network response was not ok");
-      
+
       const responseText = await res.text();
-      let data: any = {};
+      console.log("Raw response text:", responseText);
+      console.log("Response length:", responseText.length);
+
+      let report1 = "";
+      let report2 = "";
+
+      // Try parsing as JSON (if Make.com returns report URLs)
       try {
-        // Attempt to parse JSON if the webhook is configured to return it
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.warn("Webhook returned non-JSON response:", responseText);
+        const data = JSON.parse(responseText);
+        console.log("Parsed JSON:", JSON.stringify(data, null, 2));
+        report1 = cleanUrl(data.full_report_url || "");
+        report2 = cleanUrl(data.seo_report_url || "");
+        console.log("Report 1 URL:", report1);
+        console.log("Report 2 URL:", report2);
+      } catch {
+        console.log("NOT JSON — plain text response received:", responseText);
       }
-      
-      setReportLinks({
-        full: data?.full_report_url || "https://example.com/Make-Webhook-Did-Not-Return-URL",
-        seo: data?.seo_report_url || "https://example.com/Make-Webhook-Did-Not-Return-URL"
-      });
+
+      setReportLinks({ report1, report2 });
 
       clearInterval(progressInterval);
 
       // Fast-forward any remaining steps sequentially
       for (let i = currentStep; i < STEPS.length; i++) {
         setActiveStep(i);
-        await new Promise(r => setTimeout(r, 600)); 
+        await new Promise(r => setTimeout(r, 600));
         setCompletedSteps(prev => [...prev, i]);
       }
-      
-      await new Promise(r => setTimeout(r, 600));
-      
+
+      await new Promise(r => setTimeout(r, 800));
+
       setScreen("success");
+
     } catch (error) {
       console.error("Webhook error:", error);
       clearInterval(progressInterval);
@@ -225,6 +272,8 @@ export default function AuditDashboard() {
     }
   }
 
+
+
   function handleReset() {
     setScreen("landing");
     setFormData({ brandName: "", website: "", industry: "", email: "" });
@@ -234,7 +283,11 @@ export default function AuditDashboard() {
     setSelectedBrand(null);
     setHighlightedFields(new Set());
     setWebhookError("");
-    setReportLinks({ full: "", seo: "" });
+    setReportLinks({ report1: "", report2: "" });
+    setSuggestions([]);
+    setShowDropdown(false);
+    setSelectedUrl("");
+    setSearchError("");
   }
 
   function updateField(field: keyof FormData, value: string) {
@@ -243,6 +296,118 @@ export default function AuditDashboard() {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
     if (field !== "email") setSelectedBrand(null);
+  }
+
+  async function fetchSuggestions(value: string) {
+    if (value.length < 3) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      setSearchError("");
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    setIsFetchingSuggestions(true);
+    setSearchError("");
+
+    try {
+      const apiKey = import.meta.env.VITE_SERPER_API_KEY || "";
+      if (!apiKey) console.warn("Missing VITE_SERPER_API_KEY");
+
+      const res = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          q: `${value} official website`
+        }),
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!res.ok) throw new Error("Network response was not ok");
+
+      const data = await res.json();
+      const organic = data.organic || [];
+
+      const unwantedDomains = [
+        "wikipedia.org",
+        "linkedin.com",
+        "facebook.com",
+        "instagram.com",
+        "twitter.com",
+        "youtube.com",
+        "bloomberg.com",
+        "crunchbase.com"
+      ];
+
+      const urls: string[] = [];
+      for (const item of organic) {
+        if (!item.link) continue;
+        try {
+          const urlObj = new URL(item.link);
+          const domain = urlObj.hostname.toLowerCase();
+          const isUnwanted = unwantedDomains.some(unwanted => domain.includes(unwanted));
+          if (!isUnwanted && !urls.includes(item.link)) {
+            urls.push(item.link);
+          }
+        } catch { }
+      }
+
+      if (urls.length > 0) {
+        setSuggestions(urls);
+        setShowDropdown(true);
+      } else {
+        setSuggestions([]);
+        setSearchError("No results found");
+        setShowDropdown(true);
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error("Suggestion fetch failed:", error);
+        setSuggestions([]);
+        setSearchError("No results found");
+        setShowDropdown(true);
+      }
+    } finally {
+      setIsFetchingSuggestions(false);
+    }
+  }
+
+  function handleInputChange(field: keyof FormData, value: string) {
+    updateField(field, value);
+
+    if (field === "brandName") {
+      setSelectedUrl("");
+      setFormData(prev => ({ ...prev, website: "" })); // Reset derived domain
+
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+      if (value.trim().length >= 3) {
+        debounceTimerRef.current = setTimeout(() => {
+          fetchSuggestions(value.trim());
+        }, 300);
+      } else {
+        setSuggestions([]);
+        setShowDropdown(false);
+        setSearchError("");
+      }
+    }
+  }
+
+  function handleDropdownSelect(url: string) {
+    const normalized = normalizeUrl(url);
+    setFormData(prev => ({ ...prev, website: normalized }));
+    setSelectedUrl(normalized);
+    setShowDropdown(false);
+    setSuggestions([]);
+    setSearchError("");
+    setErrors(prev => ({ ...prev, website: undefined }));
   }
 
   return (
@@ -296,23 +461,79 @@ export default function AuditDashboard() {
                 className={`form-input${errors.brandName ? " error" : ""}${highlightedFields.has("brandName") ? " filled-highlight" : ""}`}
                 placeholder="e.g. DKRaj Jewels"
                 value={formData.brandName}
-                onChange={(e) => updateField("brandName", e.target.value)}
+                onChange={(e) => handleInputChange("brandName", e.target.value)}
                 disabled={isSending}
+                autoComplete="off"
               />
               {errors.brandName && <p className="form-error-text visible">{errors.brandName}</p>}
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label" htmlFor="website">WEBSITE URL</label>
               <input
                 id="website"
                 type="text"
                 className={`form-input${errors.website ? " error" : ""}${highlightedFields.has("website") ? " filled-highlight" : ""}`}
-                placeholder="e.g. dkrajjewels.com"
+                placeholder="Select from company suggestions..."
                 value={formData.website}
-                onChange={(e) => updateField("website", e.target.value)}
+                readOnly
                 disabled={isSending}
               />
+              {isFetchingSuggestions && (
+                <div style={{ position: 'absolute', right: '12px', top: '38px', fontSize: '12px', color: '#C9A84C', letterSpacing: '2px' }}>Searching…</div>
+              )}
+              {showDropdown && (suggestions.length > 0 || searchError) && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 10,
+                  backgroundColor: '#0c1220',
+                  border: '1px solid var(--gold, #C9A84C)',
+                  borderRadius: '6px',
+                  marginTop: '4px',
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  maxHeight: '260px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                }}>
+                  {searchError && suggestions.length === 0 ? (
+                    <div style={{ padding: '12px 16px', color: '#a1a1aa', fontSize: '14px' }}>
+                      {searchError}
+                    </div>
+                  ) : (
+                    suggestions.map((url, idx) => {
+                      const isSelected = selectedUrl === url;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleDropdownSelect(url)}
+                          onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.background = 'rgba(201, 168, 76, 0.1)'; }}
+                          onMouseOut={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '12px 16px',
+                            background: isSelected ? 'rgba(201, 168, 76, 0.15)' : 'transparent',
+                            color: isSelected ? '#C9A84C' : '#fff',
+                            border: 'none',
+                            borderBottom: idx < suggestions.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontFamily: 'monospace',
+                            transition: 'background 0.2s',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {url}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              )}
               {errors.website && <p className="form-error-text visible">{errors.website}</p>}
             </div>
 
@@ -344,10 +565,10 @@ export default function AuditDashboard() {
               {errors.email && <p className="form-error-text visible">{errors.email}</p>}
             </div>
 
-            <button 
-              type="button" 
-              className={`btn-generate transition-opacity duration-300 ${isSending ? "opacity-70 cursor-not-allowed" : ""}`} 
-              onClick={handleSubmit} 
+            <button
+              type="button"
+              className={`btn-generate transition-opacity duration-300 ${isSending ? "opacity-70 cursor-not-allowed" : ""}`}
+              onClick={handleSubmit}
               disabled={isSending}
             >
               {isSending ? "PROCESSING..." : "GENERATE AUDIT REPORT →"}
@@ -400,7 +621,7 @@ export default function AuditDashboard() {
           </div>
 
           <h2 className="loading-heading">Generating Your Audit Report...</h2>
-          
+
           <p className="mt-2 text-[#a1a1aa] text-center text-sm md:text-base max-w-md mx-auto mb-8 px-4 leading-relaxed">
             Analyzing website, social media & SEO data. This may take 60–120 seconds.
           </p>
@@ -409,7 +630,7 @@ export default function AuditDashboard() {
             {STEPS.map((step, i) => {
               const isDone = completedSteps.includes(i);
               const isActive = activeStep === i && !isDone;
-              
+
               let icon = "";
               if (isDone) icon = "✓";
               else if (isActive && i === STEPS.length - 1) icon = "⏳";
@@ -433,6 +654,7 @@ export default function AuditDashboard() {
         </div>
       )}
 
+
       {/* Screen 3: Success */}
       {screen === "success" && (
         <div className="success-screen" style={{ display: "flex", opacity: 1 }}>
@@ -445,68 +667,10 @@ export default function AuditDashboard() {
           <h2 className="success-heading">Report Delivered!</h2>
 
           <p className="success-subtext">
-            Your audit report for <strong style={{ color: "var(--gold)" }}>{formData.brandName}</strong> has been sent to{" "}
-            <strong style={{ color: "var(--silver-light)" }}>{formData.email}</strong>. Please check your inbox.
+            Report sent to your email —{" "}
+            <strong style={{ color: "var(--silver-light)" }}>{formData.email}</strong>. Check your inbox for the audit of{" "}
+            <strong style={{ color: "var(--gold)" }}>{formData.brandName}</strong>.
           </p>
-
-          <p className="mt-6 text-[#a1a1aa] text-center text-sm md:text-base max-w-lg mx-auto">
-            You will receive both reports in your inbox shortly.
-          </p>
-
-          <style>{`
-            .report-buttons-container {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 20px;
-              margin-top: 32px;
-              margin-bottom: 12px;
-              justify-content: center;
-              width: 100%;
-            }
-            .report-link-btn {
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              padding: 14px 28px;
-              border: 1px solid var(--gold, #C9A84C);
-              color: var(--gold, #C9A84C);
-              background: transparent;
-              border-radius: 6px;
-              font-family: inherit;
-              font-size: 14px;
-              font-weight: 600;
-              letter-spacing: 0.5px;
-              cursor: pointer;
-              transition: all 0.3s ease;
-              white-space: nowrap;
-            }
-            .report-link-btn:hover {
-              background: var(--gold, #C9A84C);
-              color: #0c1220;
-              box-shadow: 0 4px 12px rgba(201, 168, 76, 0.2);
-              transform: translateY(-1px);
-            }
-          `}</style>
-
-          <div className="report-buttons-container">
-            {reportLinks.full && (
-              <button 
-                className="report-link-btn"
-                onClick={() => window.open(reportLinks.full, "_blank")}
-              >
-                View Full Audit (PDF)
-              </button>
-            )}
-            
-            {reportLinks.seo && (
-              <button 
-                className="report-link-btn"
-                onClick={() => window.open(reportLinks.seo, "_blank")}
-              >
-                View SEO Report (PDF)
-              </button>
-            )}
-          </div>
 
           <div className="success-buttons mt-10">
             <button className="btn-another" onClick={handleReset}>
