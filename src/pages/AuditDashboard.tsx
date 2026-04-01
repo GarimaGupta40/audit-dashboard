@@ -205,9 +205,13 @@ export default function AuditDashboard() {
     setActiveStep(0);
     setCompletedSteps([]);
 
+    // Minimum time to show loading screen (90 seconds — matches Make.com processing)
+    const MIN_LOADING_MS = 90_000;
+    const loadingStartTime = Date.now();
+
     let currentStep = 0;
 
-    // Continuously loop through steps while waiting for webhook
+    // Cycle through steps while loading screen is visible
     const progressInterval = setInterval(() => {
       setCompletedSteps((prev) => [...prev, currentStep]);
       currentStep++;
@@ -248,6 +252,14 @@ export default function AuditDashboard() {
       }
 
       setReportLinks({ report1, report2 });
+
+      // Wait for the remaining minimum loading time before proceeding
+      const elapsed = Date.now() - loadingStartTime;
+      const remaining = MIN_LOADING_MS - elapsed;
+      if (remaining > 0) {
+        console.log(`Webhook responded early. Waiting ${Math.round(remaining / 1000)}s more for Make.com to finish processing...`);
+        await new Promise(r => setTimeout(r, remaining));
+      }
 
       clearInterval(progressInterval);
 
