@@ -345,7 +345,8 @@ body {
 
 .btn-generate:hover {
   filter: brightness(1.1);
-  transform: scale(1.01);
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(201, 168, 76, 0.25);
 }
 
 .btn-generate:active {
@@ -689,8 +690,72 @@ body {
   background: rgba(201, 168, 76, 0.1);
 }
 
+/* Download Section */
+.download-section {
+  margin-top: 24px;
+  margin-bottom: 24px;
+  width: 100%;
+  max-width: 600px;
+  background: var(--navy-card);
+  border: 1px solid rgba(201, 168, 76, 0.2);
+  border-radius: 12px;
+  padding: 24px;
+  position: relative;
+  z-index: 1;
+}
+
+.download-heading {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  color: var(--gold);
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+.download-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.btn-download {
+  background: var(--gold);
+  color: var(--navy);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border: none;
+  border-radius: 8px;
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-download:hover:not(:disabled) {
+  transform: scale(1.03);
+  box-shadow: 0 4px 16px rgba(201, 168, 76, 0.3);
+}
+
+.btn-download:disabled {
+  background: rgba(201, 168, 76, 0.15);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  border: 1px dashed rgba(201, 168, 76, 0.3);
+}
+
 /* Responsive */
 @media (max-width: 640px) {
+  .download-buttons {
+    flex-direction: column;
+  }
+
   .sample-brands-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -728,4 +793,161 @@ body {
   .success-heading {
     font-size: 36px;
   }
+}
+
+/* Usage Indicator */
+.usage-indicator {
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  background: rgba(10, 14, 42, 0.85);
+  border: 1px solid rgba(201, 168, 76, 0.25);
+  border-radius: 8px;
+  padding: 12px 16px;
+  z-index: 50;
+  min-width: 200px;
+  backdrop-filter: blur(8px);
+}
+
+.usage-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.usage-user {
+  font-size: 11px;
+  color: var(--silver);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-logout {
+  background: transparent;
+  border: none;
+  color: var(--red-error);
+  font-size: 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.btn-logout:hover {
+  text-decoration: underline;
+}
+
+.usage-text {
+  font-size: 13px;
+  color: var(--silver-light);
+  font-weight: 500;
+}
+
+.usage-bar-bg {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* Paywall Modal */
+.paywall-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 42, 0.9);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.paywall-modal {
+  background: var(--navy-card);
+  border: 1px solid var(--gold);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(201, 168, 76, 0.3);
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+.paywall-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.paywall-title {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--white);
+  margin-bottom: 16px;
+}
+
+.paywall-description {
+  font-size: 15px;
+  color: var(--silver);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.btn-cancel {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--silver);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  border-radius: 8px;
+  padding: 14px 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 52px;
+}
+
+.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.w-full {
+  width: 100%;
+}
+
+/* Standalone Logout */
+.btn-standalone-logout {
+  background: var(--red-error);
+  color: var(--white);
+  border: none;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+.btn-standalone-logout:hover {
+  background: #dc2626; /* darker red */
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.3);
+}
+
+.btn-standalone-logout:active {
+  transform: translateY(0);
 }
