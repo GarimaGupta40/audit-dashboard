@@ -661,7 +661,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
           <h2 className="success-heading">Report Delivered!</h2>
 
           <p className="success-subtext">
-            Report sent to your email —{" "}
+            The report will be sent shortly to your email —{" "}
             <strong style={{ color: "var(--silver-light)" }}>{formData.email}</strong>. Check your inbox for the audit of{" "}
             <strong style={{ color: "var(--gold)" }}>{formData.brandName}</strong>.
           </p>
