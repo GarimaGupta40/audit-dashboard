@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 type Screen = "landing" | "loading" | "success";
 
-const WEBHOOK_URL = "https://hook.eu1.make.com/lmrn7m3idwpzpd3a2mx16amlc9or9ng4";
+const WEBHOOK_URL = "https://hook.eu1.make.com/g9qws4hrw0jfl6wl5ttx7cxp2pa5fn4j";
 
 const STEPS = [
   "Collecting Social Media Data",
