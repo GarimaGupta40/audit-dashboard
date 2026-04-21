@@ -81,6 +81,7 @@ function CheckmarkSVG() {
 interface FormData {
   brandName: string;
   website: string;
+  linkedinUrl: string;
   industry: string;
   email: string;
 }
@@ -88,6 +89,7 @@ interface FormData {
 interface FormErrors {
   brandName?: string;
   website?: string;
+  linkedinUrl?: string;
   industry?: string;
   email?: string;
 }
@@ -97,6 +99,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
   const [formData, setFormData] = useState<FormData>({
     brandName: "",
     website: "",
+    linkedinUrl: "",
     industry: "",
     email: "",
   });
@@ -115,6 +118,13 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string>("");
 
+  const [linkedinSuggestions, setLinkedinSuggestions] = useState<{name: string, url: string}[]>([]);
+  const [showLinkedinDropdown, setShowLinkedinDropdown] = useState<boolean>(false);
+  const [selectedLinkedinUrl, setSelectedLinkedinUrl] = useState<string>("");
+  const [isFetchingLinkedinSuggestions, setIsFetchingLinkedinSuggestions] = useState<boolean>(false);
+  const [linkedinSearchError, setLinkedinSearchError] = useState<string>("");
+  const linkedinAbortControllerRef = useRef<AbortController | null>(null);
+
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -124,6 +134,9 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     const newErrors: FormErrors = {};
     if (!formData.brandName.trim()) newErrors.brandName = "Brand name is required";
     if (!selectedUrl) newErrors.website = "Please select a website from suggestions";
+    if (!selectedLinkedinUrl && linkedinSuggestions.length > 1) {
+      newErrors.linkedinUrl = "Please select the correct LinkedIn company";
+    }
     if (!formData.industry.trim()) newErrors.industry = "Industry is required";
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
@@ -143,12 +156,14 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
       ...prev,
       brandName: brand.name,
       website: brand.url,
+      linkedinUrl: "", // Reset linkedin
       industry: brand.industry,
     }));
     setErrors((prev) => ({
       ...prev,
       brandName: undefined,
       website: undefined,
+      linkedinUrl: undefined,
       industry: undefined,
     }));
 
@@ -159,6 +174,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
+
+    fetchLinkedinSuggestions(brand.name, brand.url);
   }
 
   function normalizeUrl(url: string): string {
@@ -187,6 +204,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
       body: JSON.stringify({
         company_name: companyName,
         selected_url: url,
+        linkedin_url: selectedLinkedinUrl,
         industry: industry,
         recipient_email: email,
         email: email // Added as a fallback in case Make.com expects 'email'
@@ -271,7 +289,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
   function handleReset() {
     setScreen("landing");
-    setFormData({ brandName: "", website: "", industry: "", email: "" });
+    setFormData({ brandName: "", website: "", linkedinUrl: "", industry: "", email: "" });
     setErrors({});
     setActiveStep(-1);
     setCompletedSteps([]);
@@ -282,6 +300,10 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     setShowDropdown(false);
     setSelectedUrl("");
     setSearchError("");
+    setLinkedinSuggestions([]);
+    setShowLinkedinDropdown(false);
+    setSelectedLinkedinUrl("");
+    setLinkedinSearchError("");
   }
 
   function updateField(field: keyof FormData, value: string) {
@@ -378,7 +400,10 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
     if (field === "brandName") {
       setSelectedUrl("");
-      setFormData(prev => ({ ...prev, website: "" })); // Reset derived domain
+      setFormData(prev => ({ ...prev, website: "", linkedinUrl: "" })); // Reset derived domain
+      setSelectedLinkedinUrl("");
+      setLinkedinSuggestions([]);
+      setShowLinkedinDropdown(false);
 
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
@@ -402,6 +427,104 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     setSuggestions([]);
     setSearchError("");
     setErrors(prev => ({ ...prev, website: undefined }));
+
+    const currentBrandName = formData.brandName || '';
+    if (currentBrandName && normalized) {
+      fetchLinkedinSuggestions(currentBrandName, normalized);
+    }
+  }
+
+  async function fetchLinkedinSuggestions(brandName: string, website: string) {
+    if (!brandName || !website) return;
+
+    if (linkedinAbortControllerRef.current) {
+      linkedinAbortControllerRef.current.abort();
+    }
+    linkedinAbortControllerRef.current = new AbortController();
+
+    setIsFetchingLinkedinSuggestions(true);
+    setLinkedinSearchError("");
+    setLinkedinSuggestions([]);
+    setShowLinkedinDropdown(false);
+    setSelectedLinkedinUrl("");
+    setFormData(prev => ({ ...prev, linkedinUrl: "" }));
+
+    try {
+      const apiKey = import.meta.env.VITE_SERPER_API_KEY || "";
+      if (!apiKey) console.warn("Missing VITE_SERPER_API_KEY");
+
+      let domain = "";
+      try {
+        domain = new URL(website).hostname.replace(/^www\./, '');
+      } catch {
+        domain = website;
+      }
+
+      const res = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          q: `site:linkedin.com/company ${brandName} ${domain}`
+        }),
+        signal: linkedinAbortControllerRef.current.signal
+      });
+
+      if (!res.ok) throw new Error("Network response was not ok");
+
+      const data = await res.json();
+      const organic = data.organic || [];
+
+      const results: {name: string, url: string}[] = [];
+      const seenUrls = new Set<string>();
+
+      for (const item of organic) {
+        if (!item.link) continue;
+        try {
+          const urlObj = new URL(item.link);
+          const domainName = urlObj.hostname.toLowerCase();
+          const path = urlObj.pathname.toLowerCase();
+
+          if (domainName.includes('linkedin.com') && path.startsWith('/company/')) {
+            const cleanTargetUrl = `https://www.linkedin.com${path.replace(/\/$/, '')}`;
+            
+            if (!seenUrls.has(cleanTargetUrl)) {
+              seenUrls.add(cleanTargetUrl);
+              
+              let cleanName = item.title.replace(/\s*[\|-]?\s*LinkedIn\s*$/i, '').trim();
+              cleanName = cleanName.replace(/\s*[\|-]?\s*Overview\s*$/i, '').trim();
+              
+              results.push({ name: cleanName, url: cleanTargetUrl });
+              
+              if (results.length >= 5) break; 
+            }
+          }
+        } catch { }
+      }
+
+      if (results.length === 1) {
+        setFormData(prev => ({ ...prev, linkedinUrl: results[0].url }));
+        setSelectedLinkedinUrl(results[0].url);
+        setLinkedinSuggestions(results);
+        setShowLinkedinDropdown(false);
+      } else if (results.length > 1) {
+        setLinkedinSuggestions(results);
+        setShowLinkedinDropdown(true);
+      } else {
+        setLinkedinSearchError("No LinkedIn profile found");
+        setShowLinkedinDropdown(true);
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error("LinkedIn suggestion fetch failed:", error);
+        setLinkedinSearchError("No LinkedIn profile found");
+        setShowLinkedinDropdown(true);
+      }
+    } finally {
+      setIsFetchingLinkedinSuggestions(false);
+    }
   }
 
   return (
@@ -531,6 +654,86 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               {errors.website && <p className="form-error-text visible">{errors.website}</p>}
             </div>
 
+            <div className="form-group" style={{ position: 'relative' }}>
+              <label className="form-label" htmlFor="linkedinUrl">LINKEDIN URL</label>
+              <input
+                id="linkedinUrl"
+                type="text"
+                className={`form-input cursor-pointer ${errors.linkedinUrl ? " error" : ""}${highlightedFields.has("linkedinUrl") ? " filled-highlight" : ""}`}
+                placeholder="Select LinkedIn profile from suggestions..."
+                value={formData.linkedinUrl ? (linkedinSuggestions.find(s => s.url === formData.linkedinUrl)?.name || formData.linkedinUrl) : ""}
+                readOnly
+                disabled={isSending}
+                onClick={() => {
+                  if (!isSending && linkedinSuggestions.length > 1) {
+                    setShowLinkedinDropdown(!showLinkedinDropdown);
+                  }
+                }}
+              />
+              {isFetchingLinkedinSuggestions && (
+                <div style={{ position: 'absolute', right: '12px', top: '38px', fontSize: '12px', color: '#C9A84C', letterSpacing: '2px' }}>Searching...</div>
+              )}
+              {showLinkedinDropdown && (linkedinSuggestions.length > 0 || linkedinSearchError) && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 10,
+                  backgroundColor: '#0c1220',
+                  border: '1px solid var(--gold, #C9A84C)',
+                  borderRadius: '6px',
+                  marginTop: '4px',
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  maxHeight: '260px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                }}>
+                  {linkedinSearchError && linkedinSuggestions.length === 0 ? (
+                    <div style={{ padding: '12px 16px', color: '#a1a1aa', fontSize: '14px' }}>
+                      {linkedinSearchError}
+                    </div>
+                  ) : (
+                    linkedinSuggestions.map((suggestion, idx) => {
+                      const isSelected = selectedLinkedinUrl === suggestion.url;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, linkedinUrl: suggestion.url }));
+                            setSelectedLinkedinUrl(suggestion.url);
+                            setShowLinkedinDropdown(false);
+                            setLinkedinSearchError("");
+                            setErrors(prev => ({ ...prev, linkedinUrl: undefined }));
+                          }}
+                          onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.background = 'rgba(201, 168, 76, 0.1)'; }}
+                          onMouseOut={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '12px 16px',
+                            background: isSelected ? 'rgba(201, 168, 76, 0.15)' : 'transparent',
+                            border: 'none',
+                            borderBottom: idx < linkedinSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            transition: 'background 0.2s',
+                          }}
+                        >
+                          <span style={{ color: isSelected ? '#C9A84C' : '#fff', fontWeight: 500, fontSize: '14px' }}>{suggestion.name}</span>
+                          <span style={{ color: '#a1a1aa', fontSize: '12px', wordBreak: 'break-all' }}>{suggestion.url}</span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+              {errors.linkedinUrl && <p className="form-error-text visible">{errors.linkedinUrl}</p>}
+            </div>
+
             <div className="form-group">
               <label className="form-label" htmlFor="industry">INDUSTRY</label>
               <input
@@ -561,9 +764,9 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
             <button
               type="button"
-              className={`btn-generate transition-opacity duration-300 ${isSending ? "opacity-70 cursor-not-allowed" : ""}`}
+              className={`btn-generate transition-opacity duration-300 ${isSending || (linkedinSuggestions.length > 1 && !selectedLinkedinUrl) ? "opacity-70 cursor-not-allowed" : ""}`}
               onClick={handleSubmit}
-              disabled={isSending}
+              disabled={isSending || (linkedinSuggestions.length > 1 && !selectedLinkedinUrl)}
             >
               {isSending ? "PROCESSING..." : "GENERATE AUDIT REPORT →"}
             </button>
