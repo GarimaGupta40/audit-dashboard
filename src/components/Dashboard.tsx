@@ -20,6 +20,36 @@ const sampleBrands = [
   { name: "Tesla", url: "https://www.tesla.com", industry: "Automotive & Energy" },
 ];
 
+const INDUSTRIES = [
+  "Software & IT Services",
+  "SaaS / Cloud",
+  "E-commerce & Retail",
+  "Education & EdTech",
+  "Healthcare & Pharma",
+  "Banking & Finance",
+  "Insurance",
+  "Real Estate",
+  "Manufacturing",
+  "Logistics & Supply Chain",
+  "Travel & Hospitality",
+  "Media & Entertainment",
+  "Marketing & Advertising",
+  "Telecommunications",
+  "Energy & Utilities",
+  "Construction & Engineering",
+  "Government & Public Sector",
+  "Non-profit / NGO",
+  "Legal Services",
+  "Consulting & Professional Services",
+  "Automotive",
+  "Agriculture",
+  "Food & Beverage",
+  "Fashion & Apparel",
+  "Sports & Fitness",
+  "Gaming",
+  "Others"
+];
+
 function Navbar({ onLogout }: { onLogout?: () => void }) {
   return (
     <nav className="navbar">
@@ -86,6 +116,7 @@ interface FormData {
   facebookUrl: string;
   youtubeUrl: string;
   industry: string;
+  otherIndustry: string;
   email: string;
 }
 
@@ -97,6 +128,7 @@ interface FormErrors {
   facebookUrl?: string;
   youtubeUrl?: string;
   industry?: string;
+  otherIndustry?: string;
   email?: string;
 }
 
@@ -110,6 +142,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     facebookUrl: "",
     youtubeUrl: "",
     industry: "",
+    otherIndustry: "",
     email: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -160,6 +193,17 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
   const formRef = useRef<HTMLFormElement>(null);
 
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.dropdown-wrapper')) {
+        openDropdown('none');
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const openDropdown = (type: 'website' | 'linkedin' | 'instagram' | 'facebook' | 'youtube' | 'none') => {
     setShowDropdown(type === 'website');
     setShowLinkedinDropdown(type === 'linkedin');
@@ -178,6 +222,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
     if (!selectedFacebookUrl) newErrors.facebookUrl = errMsg;
     if (!selectedYoutubeUrl) newErrors.youtubeUrl = errMsg;
     if (!formData.industry.trim()) newErrors.industry = "Industry is required";
+    if (formData.industry === "Others" && !formData.otherIndustry.trim()) newErrors.otherIndustry = "Please specify the sector";
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -242,7 +287,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
   async function performRequest() {
     const companyName = formData.brandName.trim();
     const url = normalizeUrl(selectedUrl);
-    const industry = formData.industry.trim();
+    const industry = formData.industry === "Others" ? formData.otherIndustry.trim() : formData.industry.trim();
     const email = formData.email.trim();
 
     return fetch(WEBHOOK_URL, {
@@ -794,7 +839,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          q: `site:youtube.com channel OR @ ${brandName}`
+          q: `site:youtube.com ${brandName}`
         }),
         signal: youtubeAbortControllerRef.current.signal
       });
@@ -816,8 +861,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
           // Filtering rules
           if (domainName.includes('youtube')) {
-            // Exclude posts/reels/videos
-            if (path.includes('/p/') || path.includes('/reel/') || path.includes('/videos/') || path.includes('/shorts/') || path.includes('/watch')) continue;
+            // Exclude posts/reels/videos/playlists
+            if (path.includes('/p/') || path.includes('/reel/') || path.includes('/videos/') || path.includes('/shorts/') || path.includes('/watch') || path.includes('/playlist')) continue;
 
             const cleanTargetUrl = item.link.split('?')[0].replace(/\/$/, '');
 
@@ -910,7 +955,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               {errors.brandName && <p className="form-error-text visible">{errors.brandName}</p>}
             </div>
 
-            <div className="form-group" style={{ position: 'relative', zIndex: showDropdown ? 60 : 1 }}>
+            <div className="form-group dropdown-wrapper" style={{ position: 'relative', zIndex: showDropdown ? 60 : 1 }}>
               <label className="form-label" htmlFor="website">WEBSITE URL <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 id="website"
@@ -950,8 +995,33 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
                   boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
                 }}>
                   {searchError && suggestions.length === 0 ? (
-                    <div style={{ padding: '12px 16px', color: '#a1a1aa', fontSize: '14px' }}>
-                      {searchError}
+                    <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <span style={{ color: '#a1a1aa', fontSize: '14px' }}>{searchError}</span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="https://..."
+                          style={{ flex: 1, padding: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '13px', outline: 'none' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (e.currentTarget.value) handleDropdownSelect(e.currentTarget.value);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                            if (input.value) handleDropdownSelect(input.value);
+                          }}
+                          style={{ padding: '8px 12px', background: 'rgba(201,168,76,0.1)', color: '#C9A84C', borderRadius: '4px', border: '1px solid rgba(201,168,76,0.3)', cursor: 'pointer', fontSize: '13px', transition: 'all 0.2s' }}
+                          onMouseOver={e => e.currentTarget.style.background = 'rgba(201,168,76,0.2)'}
+                          onMouseOut={e => e.currentTarget.style.background = 'rgba(201,168,76,0.1)'}
+                        >
+                          Set
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     suggestions.map((url, idx) => {
@@ -988,7 +1058,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               {errors.website && <p className="form-error-text visible">{errors.website}</p>}
             </div>
 
-            <div className="form-group" style={{ position: 'relative', zIndex: showLinkedinDropdown ? 50 : 1 }}>
+            <div className="form-group dropdown-wrapper" style={{ position: 'relative', zIndex: showLinkedinDropdown ? 50 : 1 }}>
               <label className="form-label" htmlFor="linkedinUrl">LINKEDIN URL <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 id="linkedinUrl"
@@ -1009,7 +1079,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               )}
               {!isFetchingLinkedinSuggestions && selectedLinkedinUrl && (
                 <div style={{ position: 'absolute', right: '8px', top: '36px', display: 'flex', gap: '6px', zIndex: 20 }}>
-                  {selectedLinkedinUrl !== 'Not Available' && (
+                  {selectedLinkedinUrl !== 'Not Found' && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); window.open(selectedLinkedinUrl, '_blank'); }} style={{ background: 'rgba(201,168,76,0.1)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(201,168,76,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(201,168,76,0.1)'}>Verify</button>
                   )}
                   <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedLinkedinUrl(''); setFormData(prev => ({ ...prev, linkedinUrl: '' })); if (linkedinSuggestions.length === 0 && formData.brandName) { fetchLinkedinSuggestions(formData.brandName, normalizeUrl(formData.website), true); } else { openDropdown('linkedin'); } }} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}>✖ Change</button>
@@ -1075,8 +1145,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, linkedinUrl: 'Not Available' }));
-                          setSelectedLinkedinUrl('Not Available');
+                          setFormData(prev => ({ ...prev, linkedinUrl: 'Not Found' }));
+                          setSelectedLinkedinUrl('Not Found');
                           setLinkedinSearchError("");
                           setErrors(prev => ({ ...prev, linkedinUrl: undefined }));
                           openDropdown('none');
@@ -1106,7 +1176,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               {errors.linkedinUrl && <p className="form-error-text visible">{errors.linkedinUrl}</p>}
             </div>
 
-            <div className="form-group" style={{ position: 'relative', zIndex: showInstagramDropdown ? 40 : 1 }}>
+            <div className="form-group dropdown-wrapper" style={{ position: 'relative', zIndex: showInstagramDropdown ? 40 : 1 }}>
               <label className="form-label" htmlFor="instagramUrl">INSTAGRAM PROFILE <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 id="instagramUrl"
@@ -1127,7 +1197,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               )}
               {!isFetchingInstagramSuggestions && selectedInstagramUrl && (
                 <div style={{ position: 'absolute', right: '8px', top: '36px', display: 'flex', gap: '6px', zIndex: 20 }}>
-                  {selectedInstagramUrl !== 'Not Available' && (
+                  {selectedInstagramUrl !== 'Not Found' && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); window.open(selectedInstagramUrl, '_blank'); }} style={{ background: 'rgba(201,168,76,0.1)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(201,168,76,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(201,168,76,0.1)'}>Verify</button>
                   )}
                   <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedInstagramUrl(''); setFormData(prev => ({ ...prev, instagramUrl: '' })); if (instagramSuggestions.length === 0 && formData.brandName) { fetchInstagramSuggestions(formData.brandName, normalizeUrl(formData.website), true); } else { openDropdown('instagram'); } }} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}>✖ Change</button>
@@ -1193,8 +1263,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, instagramUrl: 'Not Available' }));
-                          setSelectedInstagramUrl('Not Available');
+                          setFormData(prev => ({ ...prev, instagramUrl: 'Not Found' }));
+                          setSelectedInstagramUrl('Not Found');
                           setInstagramSearchError("");
                           setErrors(prev => ({ ...prev, instagramUrl: undefined }));
                           openDropdown('none');
@@ -1225,7 +1295,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
             </div>
 
 
-            <div className="form-group" style={{ position: 'relative', zIndex: showFacebookDropdown ? 30 : 1 }}>
+            <div className="form-group dropdown-wrapper" style={{ position: 'relative', zIndex: showFacebookDropdown ? 30 : 1 }}>
               <label className="form-label" htmlFor="facebookUrl">FACEBOOK PAGE <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 id="facebookUrl"
@@ -1246,7 +1316,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               )}
               {!isFetchingFacebookSuggestions && selectedFacebookUrl && (
                 <div style={{ position: 'absolute', right: '8px', top: '36px', display: 'flex', gap: '6px', zIndex: 20 }}>
-                  {selectedFacebookUrl !== 'Not Available' && (
+                  {selectedFacebookUrl !== 'Not Found' && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); window.open(selectedFacebookUrl, '_blank'); }} style={{ background: 'rgba(201,168,76,0.1)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(201,168,76,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(201,168,76,0.1)'}>Verify</button>
                   )}
                   <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedFacebookUrl(''); setFormData(prev => ({ ...prev, facebookUrl: '' })); if (facebookSuggestions.length === 0 && formData.brandName) { fetchFacebookSuggestions(formData.brandName, normalizeUrl(formData.website), true); } else { openDropdown('facebook'); } }} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}>✖ Change</button>
@@ -1312,8 +1382,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, facebookUrl: 'Not Available' }));
-                          setSelectedFacebookUrl('Not Available');
+                          setFormData(prev => ({ ...prev, facebookUrl: 'Not Found' }));
+                          setSelectedFacebookUrl('Not Found');
                           setFacebookSearchError("");
                           setErrors(prev => ({ ...prev, facebookUrl: undefined }));
                           openDropdown('none');
@@ -1344,7 +1414,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
             </div>
 
 
-            <div className="form-group" style={{ position: 'relative', zIndex: showYoutubeDropdown ? 20 : 1 }}>
+            <div className="form-group dropdown-wrapper" style={{ position: 'relative', zIndex: showYoutubeDropdown ? 20 : 1 }}>
               <label className="form-label" htmlFor="youtubeUrl">YOUTUBE CHANNEL <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 id="youtubeUrl"
@@ -1365,7 +1435,7 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
               )}
               {!isFetchingYoutubeSuggestions && selectedYoutubeUrl && (
                 <div style={{ position: 'absolute', right: '8px', top: '36px', display: 'flex', gap: '6px', zIndex: 20 }}>
-                  {selectedYoutubeUrl !== 'Not Available' && (
+                  {selectedYoutubeUrl !== 'Not Found' && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); window.open(selectedYoutubeUrl, '_blank'); }} style={{ background: 'rgba(201,168,76,0.1)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(201,168,76,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(201,168,76,0.1)'}>Verify</button>
                   )}
                   <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedYoutubeUrl(''); setFormData(prev => ({ ...prev, youtubeUrl: '' })); if (youtubeSuggestions.length === 0 && formData.brandName) { fetchYoutubeSuggestions(formData.brandName, normalizeUrl(formData.website), true); } else { openDropdown('youtube'); } }} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}>✖ Change</button>
@@ -1431,8 +1501,8 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, youtubeUrl: 'Not Available' }));
-                          setSelectedYoutubeUrl('Not Available');
+                          setFormData(prev => ({ ...prev, youtubeUrl: 'Not Found' }));
+                          setSelectedYoutubeUrl('Not Found');
                           setYoutubeSearchError("");
                           setErrors(prev => ({ ...prev, youtubeUrl: undefined }));
                           openDropdown('none');
@@ -1464,17 +1534,43 @@ export default function Dashboard({ onGenerateStart, onGenerateSuccess, onLogout
 
 
             <div className="form-group">
-              <label className="form-label" htmlFor="industry">INDUSTRY <span style={{ color: '#ef4444' }}>*</span></label>
-              <input
-                id="industry"
-                type="text"
-                className={`form-input${errors.industry ? " error" : ""}${highlightedFields.has("industry") ? " filled-highlight" : ""}`}
-                placeholder="e.g. Sector"
-                value={formData.industry}
-                onChange={(e) => updateField("industry", e.target.value)}
-                disabled={isSending}
-              />
-              {errors.industry && <p className="form-error-text visible">{errors.industry}</p>}
+              <label className="form-label" htmlFor="industry">INDUSTRY SECTOR <span style={{ color: '#ef4444' }}>*</span></label>
+              <div style={{ position: "relative" }}>
+                <select
+                  id="industry"
+                  className={`form-input${errors.industry ? " error" : ""}${highlightedFields.has("industry") ? " filled-highlight" : ""}`}
+                  style={{
+                    appearance: "none",
+                    cursor: "pointer",
+                    color: formData.industry ? "inherit" : "#444d5f"
+                  }}
+                  value={formData.industry}
+                  onChange={(e) => updateField("industry", e.target.value)}
+                  disabled={isSending}
+                >
+                  <option value="" disabled style={{ backgroundColor: "#0c1220", color: "#a1a1aa" }}>Select Industry...</option>
+                  {INDUSTRIES.map((ind) => (
+                    <option key={ind} value={ind} style={{ backgroundColor: "#0c1220", color: "#ffffff" }}>{ind}</option>
+                  ))}
+                </select>
+                <div style={{ position: "absolute", right: "16px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#444d5f" }}>
+                  ▼
+                </div>
+              </div>
+              {formData.industry === "Others" && (
+                <input
+                  type="text"
+                  className={`form-input${errors.otherIndustry ? " error" : ""}`}
+                  style={{ marginTop: '12px' }}
+                  placeholder="Which sector it is?"
+                  value={formData.otherIndustry}
+                  onChange={(e) => updateField("otherIndustry", e.target.value)}
+                  disabled={isSending}
+                  autoComplete="off"
+                />
+              )}
+              {errors.industry && formData.industry !== "Others" && <p className="form-error-text visible">{errors.industry}</p>}
+              {errors.otherIndustry && formData.industry === "Others" && <p className="form-error-text visible">{errors.otherIndustry}</p>}
             </div>
 
             <div className="form-group">
